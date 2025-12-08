@@ -15,7 +15,7 @@ from torch.utils.data import Subset
 import torch
 
 from los_graphormer import (
-    RMLoSDataset_nuscenes,
+    RMLoSDataset_carla,
     LoSGraphormer,
     MLPBaseline,
     GCNOnChains,
@@ -29,7 +29,7 @@ from los_graphormer import (
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Train MIDAR to mimic CenterPoint detections on nuScenes dataset."
+        description="Train MIDAR to mimic CenterPoint detections on carla dataset."
     )
     parser.add_argument("--csv-path", type=str, required=True,
                         help="Path to nuScenes CSV file.")
@@ -65,13 +65,13 @@ def main():
     parser.add_argument("--warmup-steps", type=int, default=500)
     parser.add_argument("--patience", type=int, default=10)
     parser.add_argument("--max-epochs", type=int, default=200)
-    parser.add_argument("--seed", type=int, default=18)
+    parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--test-size", type=float, default=0.15,
                         help="Fraction of scenes for test.")
     parser.add_argument("--val-size", type=float, default=0.1765, #0.85*0.1765=0.15
                         help="Fraction of trainval scenes for validation.")
     parser.add_argument("--ckpt-path", type=str,
-                        default="./trained_model/nuscenes_losgraphormer.pth")
+                        default="./trained_model/carla_losgraphormer.pth")
 
     args = parser.parse_args()
 
@@ -81,14 +81,14 @@ def main():
     random.seed(args.seed)
 
     # dataset
-    ds = RMLoSDataset_nuscenes(
+    ds = RMLoSDataset_carla(
         args.csv_path,
         ray_width=args.ray_width,
         use_ray_hit=args.use_ray_hit,
-        dist_scale=60.0,
+        dist_scale=80.0,
     )
 
-    scene_indices = [meta["scene_index"] for meta in ds.frame_metadata]
+    scene_indices = [meta["scene_id"] for meta in ds.frame_metadata]
     unique_scenes = sorted(set(scene_indices))
 
     trainval_scenes, test_scenes = train_test_split(
@@ -184,7 +184,7 @@ def main():
         verbose=True,
         path=args.ckpt_path,
     )
-    '''
+    
     best_val_metric = -1.0
     for epoch in range(1, args.max_epochs + 1):
         tr_loss, tr_acc = train_epoch(model, args.model_type, train_loader, optimizer, criterion, device, scheduler=scheduler)
@@ -206,7 +206,7 @@ def main():
         if stopper.early_stop:
             print(f"Early stop at epoch {epoch}, best val metric={best_val_metric:.4f}")
             break
-        '''
+        
     model.load_state_dict(torch.load(args.ckpt_path, map_location=device))
     (te_loss, te_acc,
      te_prec, te_rec, te_f1, te_auc,

@@ -10,7 +10,7 @@ from torch_geometric.data import Data
 from torch.utils.data import Dataset
 
 
-class RMLoSDataset(Dataset):
+class RMLoSDataset_nuscenes(Dataset):
     """
     Returns Data with:
       x:   (N+1, F)  node features [ego first]
@@ -45,7 +45,7 @@ class RMLoSDataset(Dataset):
         self.use_ray_hit = use_ray_hit
         self.dist_scale = float(dist_scale)
 
-        # group by timestamp (same as your original nuScenes code)
+        # group by timestamp
         self.frames: List[pd.DataFrame] = []
         self.frame_metadata: List[Dict] = []
 
