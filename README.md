@@ -18,13 +18,13 @@ pip install -r requirements.txt
 # Example Usage
 
 python train_nuscenes.py \
-  --csv-path data/IoU_gt_FN_nuscenes_1sweep_03_car50other50_scene_with_bins_1dot8_1_360.csv \
-  --use-bin-score \
+  --csv-path data/dataset_MIDAR_nuscenes.csv \
+  --use-ray-hit \
   --model-type los_graphormer \
   --ckpt-path trained_model/nuscenes_los_graphormer.pth
 
 
-python train_nuscenes.py --csv-path ... --use-bin-score --model-type mlp
-python train_nuscenes.py --csv-path ... --use-bin-score --model-type gcn
-python train_nuscenes.py --csv-path ... --use-bin-score --model-type vanilla
+python train_nuscenes.py --csv-path data/dataset_MIDAR_nuscenes.csv --use-ray-hit --model-type mlp --ckpt-path trained_model/nuscenes_mlp.pth
+python train_nuscenes.py --csv-path data/dataset_MIDAR_nuscenes.csv --use-ray-hit --model-type gcn --ckpt-path trained_model/nuscenes_gcn.pth
+python train_nuscenes.py --csv-path data/dataset_MIDAR_nuscenes.csv --use-ray-hit --model-type vanilla --ckpt-path trained_model/nuscenes_vanilla_transformer.pth
 

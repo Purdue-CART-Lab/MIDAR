@@ -55,15 +55,15 @@ def main():
     parser.add_argument("--max-len", type=int, default=32)
 
     parser.add_argument("--mlp-hidden", type=int, default=128)
-    parser.add_argument("--gcn-hidden", type=int, default=64)
-    parser.add_argument("--gcn-layers", type=int, default=2)
+    parser.add_argument("--gcn-hidden", type=int, default=128)
+    parser.add_argument("--gcn-layers", type=int, default=3)
 
     # training hyperparams
     parser.add_argument("--batch-size", type=int, default=1)
-    parser.add_argument("--lr", type=float, default=1e-5)
-    parser.add_argument("--wd", type=float, default=1e-5)
+    parser.add_argument("--lr", type=float, default=2e-4)
+    parser.add_argument("--wd", type=float, default=1e-4)
     parser.add_argument("--warmup-steps", type=int, default=500)
-    parser.add_argument("--patience", type=int, default=20)
+    parser.add_argument("--patience", type=int, default=10)
     parser.add_argument("--max-epochs", type=int, default=200)
     parser.add_argument("--seed", type=int, default=18)
     parser.add_argument("--test-size", type=float, default=0.15,
@@ -184,13 +184,14 @@ def main():
         verbose=True,
         path=args.ckpt_path,
     )
-
+    
     best_val_metric = -1.0
     for epoch in range(1, args.max_epochs + 1):
-        tr_loss, tr_acc = train_epoch(model, train_loader, optimizer, criterion, device, scheduler=scheduler)
+        tr_loss, tr_acc = train_epoch(model, args.model_type, train_loader, optimizer, criterion, device, scheduler=scheduler)
         (val_loss, val_acc,
-         val_prec, val_rec, val_f1, val_auc,
-         val_bprec, val_brec, val_bf1, val_bthr) = evaluate(model, val_loader, criterion, device)
+        val_prec, val_rec, val_f1, val_auc,
+        val_bprec, val_brec, val_bf1, val_bthr,
+        val_bacc) = evaluate(model, args.model_type, val_loader, criterion, device)
 
         metric = val_auc if not math.isnan(val_auc) else val_f1
         best_val_metric = max(best_val_metric, metric)
@@ -198,25 +199,24 @@ def main():
         print(
             f"Epoch {epoch:03d} | "
             f"train_loss={tr_loss:.4f}, val_loss={val_loss:.4f}, "
-            f"val_acc={val_acc:.4f}, val_f1@0.5={val_f1:.4f}, val_auc={val_auc:.4f}, "
-            f"best_f1={val_bf1:.4f} @ thr={val_bthr:.3f}"
+            f"val_acc={val_acc:.4f}, val_f1@0.5={val_f1:.4f}, val_auc={val_auc:.4f}"
         )
 
         stopper(current_score=metric, model=model)
         if stopper.early_stop:
             print(f"Early stop at epoch {epoch}, best val metric={best_val_metric:.4f}")
             break
-
+        
     model.load_state_dict(torch.load(args.ckpt_path, map_location=device))
     (te_loss, te_acc,
      te_prec, te_rec, te_f1, te_auc,
-     te_bprec, te_brec, te_bf1, te_bthr) = evaluate(model, test_loader, criterion, device)
+     te_bprec, te_brec, te_bf1, te_bthr,
+     te_bacc) = evaluate(model, args.model_type, test_loader, criterion, device)
     print(
         f"[{args.model_type}] TEST: "
-        f"loss={te_loss:.4f}, acc={te_acc:.4f}, "
-        f"prec@0.5={te_prec:.4f}, rec@0.5={te_rec:.4f}, f1@0.5={te_f1:.4f}, auc={te_auc:.4f}\n"
+        f"loss={te_loss:.4f}, auc={te_auc:.4f}, "
         f"best_f1={te_bf1:.4f} @ thr={te_bthr:.3f} "
-        f"(prec={te_bprec:.4f}, rec={te_brec:.4f})"
+        f"(acc={te_bacc:.4f}, prec={te_bprec:.4f}, rec={te_brec:.4f})"
     )
 
 

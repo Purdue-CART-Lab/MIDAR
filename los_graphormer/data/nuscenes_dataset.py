@@ -10,7 +10,7 @@ from torch_geometric.data import Data
 from torch.utils.data import Dataset
 
 
-class MultiHopLoSDataset(Dataset):
+class RMLoSDataset(Dataset):
     """
     Returns Data with:
       x:   (N+1, F)  node features [ego first]
