@@ -184,7 +184,7 @@ def main():
         verbose=True,
         path=args.ckpt_path,
     )
-    '''
+    
     best_val_metric = -1.0
     for epoch in range(1, args.max_epochs + 1):
         tr_loss, tr_acc = train_epoch(model, args.model_type, train_loader, optimizer, criterion, device, scheduler=scheduler)
@@ -206,7 +206,7 @@ def main():
         if stopper.early_stop:
             print(f"Early stop at epoch {epoch}, best val metric={best_val_metric:.4f}")
             break
-        '''
+        
     model.load_state_dict(torch.load(args.ckpt_path, map_location=device))
     (te_loss, te_acc,
      te_prec, te_rec, te_f1, te_auc,

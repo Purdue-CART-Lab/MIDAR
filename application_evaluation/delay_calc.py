@@ -8,8 +8,8 @@ Created on Thu May 15 18:18:02 2025
 import xml.etree.ElementTree as ET
 
 # 1) load your tripinfo output
-tree = ET.parse('./adaptive_tsc/sumo/MIDAR_noRH_seed18.xml')
-#tree = ET.parse('./adaptive_tsc/sumo/MIDAR_seed18.xml')
+#tree = ET.parse('./adaptive_tsc/sumo/MIDAR_noRH_seed18.xml')
+tree = ET.parse('./adaptive_tsc/sumo/MIDAR_seed666.xml')
 root = tree.getroot()
 
 delays = []

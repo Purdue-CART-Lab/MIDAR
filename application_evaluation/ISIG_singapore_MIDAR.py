@@ -37,7 +37,7 @@ from torch_geometric.data import Data
 
 # Import your Graphormer implementation
 sys.path.append('../los_graphormer/models')
-from los_graphormer import LoSGraphormer  # :contentReference[oaicite:4]{index=4}
+from los_graphormer import LoSGraphormer
 from shapely.geometry import LineString, Point
 from shapely.geometry import Polygon as ShpPolygon
 
@@ -694,7 +694,7 @@ if __name__=='__main__':
     # -----------------------  CAV PARAMETERS  --------------------------------
     PENETRATION_RATE  = 0.03
     PERCEPTION_RANGE  = 54.0
-    RANDOM_SEED       = 18 #################
+    RANDOM_SEED       = 666 #################
     random.seed(RANDOM_SEED)
 
     cav_flag: dict[str, bool] = {}
