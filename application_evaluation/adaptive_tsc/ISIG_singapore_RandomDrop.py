@@ -6,18 +6,13 @@ Created on Mon May 12 14:43:56 2025
 @author: idiot
 """
 
-# %% import packages
-import time
+# import packages
 import math
-import copy
 import numpy as np
-import pandas as pd
 import random
-import traci.constants as tc
 import traci
 import os
 import sys
-from collections import defaultdict
 
 def find_last_effective_element(veh_routes):
     for element in reversed(veh_routes):
@@ -96,9 +91,7 @@ def return_ETA_cell(veh_id, intersection_center, plan_horizon, routes):
         if phase_id != None:
             return [ETA, phase_id]
 
-# DP-related functions!!!!!!!!!!!!!!!!!
-
-
+# DP-related functions
 def return_signal(phase):  # input '16','15'...
     if phase == "012":
         return [6,7,8]  # phase_id in SUMO
@@ -111,8 +104,6 @@ def return_signal(phase):  # input '16','15'...
 
 
 # given state variable and decision variable, calculate value function
-
-
 def signal_DP_sup_2(s, x, phase, prev_stage_calculation, G_min_T, Arrival_Table, offset):
     # backup G_min_T[phase_sequence[phase_sequence.index(phase)-1]]
     prev_stage_bu = prev_stage_calculation.copy()[s-x-(Yellow+Red)*2-offset]
@@ -130,57 +121,21 @@ def signal_DP_sup_2(s, x, phase, prev_stage_calculation, G_min_T, Arrival_Table,
     return x, prev_stage_bu[-1, -1], prev_stage_bu
 
 # given state variable, choose the decision variable value that minimize the value function
-
-
-def signal_DP_sup_1(s, phase, prev_stage_calculation, G_min_T, G_max_T, Arrival_Table, s_start, offset):  # s=row_index+1
-    # flag=False #replacement to prev_stage_calculation
+def signal_DP_sup_1(s, phase, prev_stage_calculation, G_min_T, G_max_T, Arrival_Table, s_start, offset):
     if s-(G_min_T[phase]+Yellow+Red) < s_start+1:
         flag = True
     else:
         flag = False
-    # prev_stage=prev_stage_calculation[s-(G_min_T+Yellow+Red)*2].copy()
     upload = [-1, np.inf]
     X = []
     for i in range(G_min_T[phase], G_max_T+1):
         if s-5-i >= s_start-Yellow-Red-G_min_T[phase]:
             X.append(i)
-    # print('X: ',X)
     for x_minor in X:
-        # print('x_minor: ',x_minor)
-        # print('s: ',s)
-        # print('offset: ',offset)
-        # print('prev_stage_calculation: ',len(prev_stage_calculation))
         x, value, stage = signal_DP_sup_2(s, x_minor, phase, prev_stage_calculation, G_min_T, Arrival_Table, offset)
-        if value < upload[1]:  # zth20240123:delete equal
+        if value < upload[1]: # < instead of <=
             upload = [x, value, stage, flag]
-    '''
-    if s-(G_min_T+Yellow+Red)<s_start+1:
-        flag=True
-        prev_stage=prev_stage_calculation[s-(G_min_T+Yellow+Red)*2].copy()
-        #upload=[0,prev_stage_calculation[s-(G_min_T+Yellow+Red)][-1,-1],prev_stage_calculation[s-(G_min_T+Yellow+Red)],flag]
-        upload=[10,np.inf,prev_stage_calculation[s-(G_min_T+Yellow+Red)],flag]
-        X=[]
-        for i in range(G_min_T,G_max_T+1):
-            if s-5-i>=s_start-Yellow-Red-G_min_T:
-                X.append(i)
-        for x_minor in X:
-            x,value,stage=signal_DP_sup_2(s,x_minor,phase,prev_stage,G_min_T,Arrival_Table)
-            if value<upload[1]:#######zth20240123:delete equal
-                upload=[x,value,stage,flag] 
-    else:
-        prev_stage=prev_stage_calculation[s-(G_min_T+Yellow+Red)*2].copy()
-        upload=[-1,np.inf]
-        X=[]
-        for i in range(G_min_T,G_max_T+1):
-            if s-5-i>=s_start-Yellow-Red-G_min_T:
-                X.append(i)
-        for x_minor in X:
-            x,value,stage=signal_DP_sup_2(s,x_minor,phase,prev_stage,G_min_T,Arrival_Table)
-            if value<=upload[1]:#######zth20240123:delete equal
-                upload=[x,value,stage,flag] 
-                '''
     return upload
-
 
 def return_phase_loc(phase):
     if phase == '012':
@@ -192,7 +147,6 @@ def return_phase_loc(phase):
     elif phase == '8910':
         phase_loc = [8,9,10]
     return phase_loc
-
 
 def return_phase_loc_spec(phase):
     if phase == '012':
@@ -211,9 +165,7 @@ def return_phase_loc_spec(phase):
         phase_loc_1 = [10]
         phase_loc_2 = [8]
         phase_loc_3 = [9]
-    # departure rate*1, departure rate*2, departure rate*3
     return phase_loc_1, phase_loc_2, phase_loc_3
-
 
 def return_phase_char(index):
     if index == 0:
@@ -226,11 +178,7 @@ def return_phase_char(index):
         return '567'
 
 # given arrival table and other predefined parameters, obtain the lowest value function and the best decision at every stage and every timestamp
-
-
 def signal_DP(Arrival_Table, G_min_T, G_max_T, phase_sequence, plan_horizon, approaches, departure_rate):
-    # not deciding skip or not
-    # stage1 calculation
     phase_sequence_index = 0
     flag = True
     while flag:
@@ -311,7 +259,6 @@ def signal_DP(Arrival_Table, G_min_T, G_max_T, phase_sequence, plan_horizon, app
             (historical_value_table, value_table), axis=1)
 
         # finish one stage
-
         if s == 120:
             flag = False
 
@@ -321,7 +268,7 @@ def signal_DP(Arrival_Table, G_min_T, G_max_T, phase_sequence, plan_horizon, app
 
 def optimal_policy_generation(result, plan_horizon):
     stage_index = len(result[2])-1
-    time_index = plan_horizon  # 20240204zth-1
+    time_index = plan_horizon
     time_all = []
     for i in range(len(result[2])):
         time_temp = result[0][int(time_index), int(stage_index)]
@@ -333,7 +280,6 @@ def optimal_policy_generation(result, plan_horizon):
             time_index = max(time_index-time_temp-5, 0)
     time_all.reverse()
     signal_time = [[a, b*10] for a, b in zip(result[2], time_all)]
-    # print(signal_time)
     flag = True
     while flag:
         if signal_time[0][0] != signal_time[1][0]:
@@ -344,7 +290,6 @@ def optimal_policy_generation(result, plan_horizon):
             if signal_time[0][1] >= 400:
                 signal_time[0][1] = 400  # bug fixed 400ms not 40s
                 flag = False
-    # delete 0
     new_list = []
     for i in range(len(signal_time)):
         if signal_time[i][1] != 0:
@@ -355,22 +300,16 @@ def optimal_policy_generation(result, plan_horizon):
     return new_list
 
 def update_CAV_flags(veh_ids: list[str]) -> None:
-    """
-    Label every *new* vehicle as CAV / non-CAV (Bernoulli with PENETRATION_RATE).
-    """
+
     for vid in veh_ids:
         if vid not in cav_flag:
             cav_flag[vid] = random.random() < PENETRATION_RATE   # True / False
 
 def get_observed_vehicle_ids(veh_ids: list[str]) -> list[str]:
-    """
-    All vehicles predicted *visible* by *any present CAV* this step.
-    The GNN filters out occluded ones (i.e. false negatives).
-    """
+
     if not veh_ids:
         return []
 
-    # ---- fast bulk queries from TraCI --------------------------------------
     positions = {v: traci.vehicle.getPosition(v) for v in veh_ids}
 
     dims = {}
@@ -380,7 +319,6 @@ def get_observed_vehicle_ids(veh_ids: list[str]) -> list[str]:
                        traci.vehicle.getLength(v),
                        traci.vehicle.getHeight(v))
         except Exception:
-            # SUMO ≤1.18 has no getHeight; assume 1.5 m
             dims[v] = (traci.vehicle.getWidth(v),
                        traci.vehicle.getLength(v),
                        1.5)
@@ -425,7 +363,6 @@ def get_observed_vehicle_ids(veh_ids: list[str]) -> list[str]:
         observed.add(cav)
     return list(observed)
   
-# %%
 # Start SUMO
 if __name__=='__main__':
 
@@ -436,16 +373,15 @@ if __name__=='__main__':
     # -----------------------  CAV-RELATED PARAMETERS  --------------------------
     PENETRATION_RATE  = 0.03    # 30 % of all vehicles become CAVs
     PERCEPTION_RANGE  = 54.0   # [m] radial sensing range of a CAV
-    RANDOM_SEED       = 666     # reproducible sampling
+    RANDOM_SEED       = 111     # reproducible sampling
     random.seed(RANDOM_SEED)
     
     # -----------------------  CAV-RELATED PARAMETERS  --------------------------
-    BIN_SIZE         = 10.0         # ← NEW default slice width
-    EDGES            = np.arange(0, PERCEPTION_RANGE + BIN_SIZE, BIN_SIZE)  # NEW
+    BIN_SIZE         = 10.0
+    EDGES            = np.arange(0, PERCEPTION_RANGE + BIN_SIZE, BIN_SIZE)
     VIS_COUNTS_GLOBAL   = np.zeros(len(EDGES) - 1, dtype=int)
     TOTAL_COUNTS_GLOBAL = np.zeros(len(EDGES) - 1, dtype=int)
-    
-    # --------------------------  CAV  DATA STRUCTURES  -------------------------
+
     cav_flag: dict[str, bool] = {}   # keeps the CAV label for every vehicle ever seen
     
     # --------------------------  SUMO-RELATED PARAMETERS  -------------------------
@@ -469,7 +405,7 @@ if __name__=='__main__':
     departure_rate = 0.5
     phase_sequence = ['8910', '34', '012', '567']  # 20240123
 
-    sumoCmd = ["sumo-gui", "-c", "/home/idiot/Research/LIDAR_Error_Modelling/singapore_dense_mixed/osm.sumocfg"]
+    sumoCmd = ["sumo-gui", "-c", "./osm.sumocfg"]
     traci.start(sumoCmd)
     routes = {}
     flag = False

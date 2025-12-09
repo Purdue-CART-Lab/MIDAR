@@ -1,19 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-COP + LoS-Graphormer (occlusion-aware visibility) for Singapore CAV demo
-Replaces the previous APPNP pipeline with your LoS-Graphormer.
+ISIG + MIDAR for Singapore CAV Adaptive Control Demo
 
-- Builds a per-CAV "frame" compatible with MultiHopLoSDataset:
-  x:   [dist, bin_score, w, l, h] (scaled as in training)
+- Builds a per-CAV "frame" compatible with RMLoSDataset:
+  x:   [dist, ray_hit, w, l, h]
   pos: XY (ego first)
   yaw: heading (rad), ego=0
   z:   center z (m), ego=0  (flat BEV)
-  chains: [ego, blockers..., target] corridor-based
-  seq_targets: last token per chain is the neighbor’s label (unused at test)
-
-- Runs the Graphormer once per CAV and returns P(occluded) for each neighbor
-  using the last token of each chain.
+  LoS chains: [ego, blockers..., target]
 
 Created: Mon Nov  3 2025
 """
@@ -21,33 +16,26 @@ Created: Mon Nov  3 2025
 # %% imports
 import time
 import math
-import copy
 import numpy as np
-import pandas as pd
 import random
-import traci.constants as tc
 import traci
 import os
 import sys
-from collections import defaultdict
 
 import torch
 import torch.nn.functional as F
 from torch_geometric.data import Data
 
-# Import your Graphormer implementation
-sys.path.append('../los_graphormer/models')
-from los_graphormer import LoSGraphormer 
 from shapely.geometry import LineString, Point
 from shapely.geometry import Polygon as ShpPolygon
 
-import matplotlib.pyplot as plt
-import networkx as nx
-from torch_geometric.utils import to_networkx
+# Import MIDAR implementation
+sys.path.append('../../los_graphormer/models')
+from los_graphormer import LoSGraphormer
 
-# --------------------------
-# Utility: feature normalizer (same as training script)
-# --------------------------
+# =============================================================================
+# Utility: feature normalizer
+# =============================================================================
 def _normalize_batch(x: torch.Tensor) -> torch.Tensor:
     return (x - x.mean(0)) / (x.std(0) + 1e-6)
 
@@ -67,16 +55,145 @@ def _box_corners_xy(x: float, y: float, l: float, w: float, yaw: float) -> np.nd
     world = (R @ local.T).T
     world[:, 0] += x
     world[:, 1] += y
-    return world  # (4,2)
+    return world
 
 def _box_polygon(cx, cy, w, l, yaw):
     # Reuse the same exact corner generator & (l,w) convention:
     corners = _box_corners_xy(cx, cy, l, w, yaw)
     return ShpPolygon(corners)
 
+def _angular_span_from_corners(corners: np.ndarray) -> tuple[float, float]:
+    # Minimal continuous azimuth span [tmin, tmax] covering all 4 corners.
+    # May return tmax < tmin (wrap). Caller handles wrap via tiling.
+    th = np.arctan2(corners[:, 1], corners[:, 0])           # [-π, π)
+    th = (th + np.pi) % (2*np.pi)                           # [0, 2π)
+    th.sort()
+    gaps = np.diff(np.concatenate([th, th[:1] + 2*np.pi]))
+    k = int(np.argmax(gaps))
+    start = th[(k + 1) % len(th)]                           # [0, 2π)
+    width = (2*np.pi) - gaps[k]
+    end = start + width                                     # (start, start+2π]
+    start = (start - np.pi)
+    end   = (end   - np.pi)
+    return float(start), float(end)
+
+def _span_to_rays_robust(tmin: float, tmax: float, n_theta: int) -> np.ndarray:
+    # Map shortest arc [tmin, tmax] to [-π, π).
+    # Works across the wrap and guarantees ≥1 ray.
+    centers = np.linspace(-np.pi, np.pi, n_theta, endpoint=False)
+    arc_len = tmax - tmin                     # in (0, 2π]
+    # Modular distance forward from tmin
+    delta = (centers - tmin + 2*np.pi) % (2*np.pi)
+    mask = (delta <= arc_len) | np.isclose(delta, arc_len)
+    idx = np.where(mask)[0]
+    if idx.size == 0:
+        # Safety net: choose ray nearest the arc midpoint
+        mid = (tmin + tmax) * 0.5
+        mid = (mid + np.pi) % (2*np.pi) - np.pi
+        idx = np.array([int(np.argmin(np.abs(((centers - mid + np.pi) % (2*np.pi)) - np.pi)))], dtype=int)
+    return idx
+
 # ===============================================================
-# CALL-SITE FIX in _build_los_frame_for_cav
-# (you were passing yaws in place of heights)
+# K-DEPTH Ray Casting
+# ===============================================================
+
+def _ray_hit_for_cav(
+    centers_xy: np.ndarray,     # (N,2) relative to ego (ego faces +x)
+    widths: np.ndarray,         # (N,)
+    lengths: np.ndarray,        # (N,)
+    heights: np.ndarray,        # (N,)
+    headings: np.ndarray,       # (N,) ego-relative, radians
+    n_theta: int = 720,
+    thresholds: tuple | list | None = (1.8, 3.6)
+) -> np.ndarray:
+
+    N = int(0 if centers_xy is None else len(centers_xy))
+    if N == 0:
+        return np.zeros((0,), dtype=np.float32)
+
+    # --- sanitize and shapes
+    centers_xy = np.asarray(centers_xy, dtype=np.float32).reshape(N, 2)
+    widths     = np.asarray(widths,     dtype=np.float32).reshape(N)
+    lengths    = np.asarray(lengths,    dtype=np.float32).reshape(N)
+    heights    = np.asarray(heights,    dtype=np.float32).reshape(N)
+    headings   = np.asarray(headings,   dtype=np.float32).reshape(N)
+
+    # ensure headings are radians and wrapped
+    if np.max(np.abs(headings)) > 3.2:
+        headings = np.deg2rad(headings)
+    headings = (headings + np.pi) % (2*np.pi) - np.pi
+
+    depths_all = np.linalg.norm(centers_xy, axis=1).astype(np.float32)
+
+    # --- helpers ---
+    def _single_ray_casting(spans_idx, depths, n_th):
+        theta_depth = np.full(n_th, np.inf, dtype=np.float32)
+        theta_owner = np.full(n_th, -1,    dtype=np.int32)
+        for i, bins in spans_idx:
+            d = depths[i]
+            cur = theta_depth[bins]
+            upd = d < cur
+            if np.any(upd):
+                theta_depth[bins[upd]] = d
+                theta_owner[bins[upd]] = i
+        # counts for this pass
+        mask = theta_owner >= 0
+        if np.any(mask):
+            vi, vc = np.unique(theta_owner[mask], return_counts=True)
+            counts = np.zeros(N, dtype=np.float32)
+            counts[vi] = vc.astype(np.float32)
+        else:
+            counts = np.zeros(N, dtype=np.float32)
+        return counts, theta_owner
+
+    # Precompute angular spans once (they don't depend on peeling)
+    # NOTE: call uses your helper ordering (l, w)
+    spans_all = []
+    for i in range(N):
+        cx, cy = float(centers_xy[i, 0]), float(centers_xy[i, 1])
+        l, w, yaw = float(lengths[i]), float(widths[i]), float(headings[i])
+        corners = _box_corners_xy(cx, cy, l, w, yaw)
+        tmin, tmax = _angular_span_from_corners(corners)
+        bins = _span_to_rays_robust(tmin, tmax, n_theta)
+        spans_all.append((i, bins))
+
+    # ----------------- SINGLE Ray Casting -----------------
+    if not thresholds:
+        counts_final, theta_owner_final = _single_ray_casting(spans_all, depths_all, n_theta)
+        return counts_final.astype(np.float32)
+
+    # ----------------- K-DEPTH Ray Casting -----------------
+    counts_total = np.zeros(N, dtype=np.float32)
+    prev_t = 0.0
+    all_thresholds = list(thresholds) + [np.inf]
+
+    for t in all_thresholds:
+        mask_keep = heights > prev_t
+        if not np.any(mask_keep):
+            prev_t = t
+            continue
+
+        kept = set(np.nonzero(mask_keep)[0])
+        spans_kept = [(i, bins) for (i, bins) in spans_all if i in kept]
+        depths_kept = depths_all  # depths are per-vehicle; _single_ray_casting indexes by i
+
+        round_counts, theta_owner = _single_ray_casting(spans_kept, depths_kept, n_theta)
+
+        # per-vehicle height slice thickness
+        if np.isfinite(t):
+            inc = np.clip(heights - prev_t, 0.0, t - prev_t).astype(np.float32)
+        else:
+            inc = np.maximum(heights - prev_t, 0.0).astype(np.float32)
+
+        counts_total += round_counts * inc
+        prev_t = t
+        if not np.isfinite(prev_t):
+            break
+    
+    return counts_total.astype(np.float32)
+
+# ===============================================================
+# Build RMLoS and LoS Chains
 # ===============================================================
 def _build_los_frame_for_cav(cav_id: str,
                              neighbour_ids: list[str],
@@ -84,9 +201,7 @@ def _build_los_frame_for_cav(cav_id: str,
                              dims: dict[str, tuple[float, float, float]],
                              headings: dict[str, float],
                              corridor_width: float = 1.0) -> Data:
-    """
-    Build a single-frame torch_geometric.Data object for the CAV and its neighbours.
-    """
+    # Build a single-frame torch_geometric.Data object for the CAV and its neighbours.
     cav_x, cav_y = positions[cav_id]
     N = len(neighbour_ids)
 
@@ -109,15 +224,26 @@ def _build_los_frame_for_cav(cav_id: str,
     for cx, cy, w, l, yaw in zip(xs, ys, ws, ls, yaws):
         polys.append(_box_polygon(cx, cy, w, l, yaw))
 
+    # --- ray_hit ---
+    bin_score = _ray_hit_for_cav(
+        centers_xy=centers,
+        widths=ws,
+        lengths=ls,
+        heights=hs,
+        headings=yaws,
+        n_theta=720,
+        thresholds=(1.8,3.6)
+    ).astype(np.float32)
+
     # --- node features ---
     dists = np.linalg.norm(centers, axis=1).astype(np.float32)
-    node_feats = np.stack([dists, ws, ls, hs], axis=1)
-    ego_feat = np.zeros((1, 4), dtype=np.float32)
+    node_feats = np.stack([dists, bin_score, ws, ls, hs], axis=1)
+    ego_feat = np.zeros((1, 5), dtype=np.float32)
     all_feats = np.vstack([ego_feat, node_feats])
     all_feats[:, 0] /= 80.0
-    all_feats[:, 1] /= 4.0
-    all_feats[:, 2] /= 8.0
-    all_feats[:, 3] /= 3.0
+    all_feats[:, 2] /= 4.0
+    all_feats[:, 3] /= 8.0
+    all_feats[:, 4] /= 3.0
 
     # --- pos/yaw/z arrays ---
     pos = np.vstack([ego_xy[None, :], centers])
@@ -159,16 +285,15 @@ def _build_los_frame_for_cav(cav_id: str,
 
 @torch.no_grad()
 def _predict_visibility_graphormer(model: LoSGraphormer, data: Data, device) -> np.ndarray:
-    """
-    Returns an array p_occ for all nodes (index-aligned with data.x),
-    where node 0 is ego. We fill non-target nodes with nan and targets
-    (last token of each chain) with the corresponding probability.
-    """
+    
+    # Returns an array probabilities of FNs for all nodes (vehicles, index-aligned with data.x),
+    # where node 0 is ego. We fill non-target nodes with nan and targets
+    # (last token of each chain) with the corresponding probability.
+    
     data = data.to(device)
-    # same preprocessing as in training
     data.x = _normalize_batch(data.x).clamp(-5, 5)
 
-    logits, _pad = model(data)            # (B=NumChainsPerFrame, S, C) but B==#chains since we batch frames=1
+    logits, _pad = model(data) # (B=NumChainsPerFrame, S, C) but B==#chains since we batch frames=1
     # In our packing, each chain is a separate sequence inside the same frame-batch.
     B, S, C = logits.shape
     # We need last token of each chain
@@ -185,33 +310,6 @@ def _predict_visibility_graphormer(model: LoSGraphormer, data: Data, device) -> 
     p_occ_nodes[0] = 1.0
     return p_occ_nodes
 
-def visualize_los_graph(data,
-                        preds=None,
-                        figsize=(6, 6),
-                        pause=0.001):
-    """Pretty networkx visualiser for the LoS graph (optional)."""
-    G   = to_networkx(data, to_undirected=True)
-    pos = {}
-    for i in range(data.num_nodes):
-        pos[i] = (data.pos[i, 0].item(), data.pos[i, 1].item())
-
-    colours = []
-    for i in range(data.num_nodes):
-        if i == 0:
-            colours.append('dodgerblue')
-        elif preds is None or np.isnan(preds[i]):
-            colours.append('lightgrey')
-        else:
-            colours.append('limegreen' if preds[i] < 0.5 else 'crimson')
-
-    plt.figure(figsize=figsize, dpi=100)
-    nx.draw_networkx_nodes(G, pos, node_color=colours, node_size=300,
-                           linewidths=0.8, edgecolors='k')
-    nx.draw_networkx_edges(G, pos, width=1.0, alpha=0.6)
-    nx.draw_networkx_labels(G, pos, labels={0: 'CAV'})
-    plt.axis('equal'); plt.axis('off'); plt.tight_layout()
-    plt.show(block=False); plt.pause(pause)
-
 # =============================================================================
 # CAV helpers
 # =============================================================================
@@ -221,11 +319,10 @@ def update_CAV_flags(veh_ids: list[str]) -> None:
             cav_flag[vid] = random.random() < PENETRATION_RATE
 
 def get_observed_vehicle_ids(veh_ids: list[str]) -> tuple[list[str], list[float]]:
-    """
-    Returns ([observed_ids], [per-inference time]) using LoS-Graphormer.
-    A vehicle is considered observed if at least one present CAV predicts it
-    as *visible* (P(occ) < OCCLUDED_THRESH).
-    """
+
+    # Returns ([observed_ids], [per-inference time]) using LoS-Graphormer.
+    # A vehicle is considered observed if at least one present CAV predicts it
+
     if not veh_ids:
         return [], []
 
@@ -259,12 +356,11 @@ def get_observed_vehicle_ids(veh_ids: list[str]) -> tuple[list[str], list[float]
 
         # Build one frame (chains) and run the transformer once
         start = time.perf_counter()
+
         data = _build_los_frame_for_cav(cav, neigh, positions, dims, headings)
         p_occ_nodes = _predict_visibility_graphormer(_gnn, data, device)
-        gnn_time_list.append(time.perf_counter() - start)
 
-        if VIS_GRAPH:
-            visualize_los_graph(data, preds=p_occ_nodes)
+        gnn_time_list.append(time.perf_counter() - start)
 
         # Nodes map: 0=ego; 1..N correspond to neigh list order
         visible_neigh = [
@@ -278,7 +374,7 @@ def get_observed_vehicle_ids(veh_ids: list[str]) -> tuple[list[str], list[float]
     return list(observed), gnn_time_list
 
 # =============================================================================
-# Your DP / signal control code — unchanged from your original file
+# ISIG Adaptive Signal Control Code
 # =============================================================================
 
 def find_last_effective_element(veh_routes):
@@ -505,11 +601,11 @@ if __name__=='__main__':
     if 'SUMO_HOME' in os.environ:
         sys.path.append(os.path.join(os.environ['SUMO_HOME'], 'tools'))
 
-    # -----------------------  Graphormer PARAMETERS  --------------------------
-    MODEL_PATH = '../trained_model/nuscenes_los_graphormer_4F_8665.pth'
+    # -----------------------  LoS-Graphormer PARAMETERS  --------------------------
+    MODEL_PATH = '../../trained_model/nuscenes_los_graphormer_8647.pth'
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     _gnn = LoSGraphormer(
-        in_feats=4,
+        in_feats=5,
         d_model=128,
         nhead=4,
         num_layers=3,
@@ -523,17 +619,17 @@ if __name__=='__main__':
     _gnn.eval()
 
     VIS_GRAPH = False
-    OCCLUDED_THRESH = 0.310 #################
+    OCCLUDED_THRESH = 0.315 # a vehicle is considered observed if P(occ) < OCCLUDED_THRESH.
 
     # -----------------------  CAV PARAMETERS  --------------------------------
     PENETRATION_RATE  = 0.03
     PERCEPTION_RANGE  = 54.0
-    RANDOM_SEED       = 18 #################
+    RANDOM_SEED       = 101
     random.seed(RANDOM_SEED)
 
     cav_flag: dict[str, bool] = {}
 
-    # -----------------------  SUMO / DP PARAMETERS  --------------------------
+    # -----------------------  SUMO / ISIG PARAMETERS  --------------------------
     traffic_light_id = '79'
     junction_id = "79"
     G_min_T = {'012': 5, '34': 5, '567': 5, '8910': 5}
@@ -549,9 +645,9 @@ if __name__=='__main__':
     plan_horizon = 120
     approaches = 11
     departure_rate = 0.5
-    phase_sequence = ['8910', '34', '012', '567']  # :contentReference[oaicite:6]{index=6}
+    phase_sequence = ['8910', '34', '012', '567']
 
-    sumoCmd = ["sumo-gui", "-c", "./adaptive_tsc/osm.sumocfg"]
+    sumoCmd = ["sumo-gui", "-c", "./osm.sumocfg"]
     traci.start(sumoCmd)
 
     routes = {}
@@ -582,8 +678,8 @@ if __name__=='__main__':
             else:
                 traci.vehicle.setColor(vid, (255, 255, 255, 255))  # light gray
 
-        # ------------ route history for DP -------------
-        if step == 1000:
+        # ------------ route history for ISIG -------------
+        if step == 100000:
             flag = True
         if step % 10 == 0:
             for veh_id in veh_id_list:
@@ -596,7 +692,7 @@ if __name__=='__main__':
                 else:
                     routes[veh_id].append(lane_id)
 
-        # ------------- DP scheduling -------------------
+        # ------------- ISIG scheduling -------------------
         if flag and step == marker:
             Arrival_Table = np.zeros((plan_horizon+1, approaches))
             for veh_id in routes:

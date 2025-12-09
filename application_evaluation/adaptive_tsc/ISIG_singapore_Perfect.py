@@ -6,14 +6,10 @@ Created on Mon May 12 14:43:56 2025
 @author: idiot
 """
 
-# %% import packages
-import time
+# import packages
 import math
-import copy
 import numpy as np
-import pandas as pd
 import random
-import traci.constants as tc
 import traci
 import os
 import sys
@@ -24,10 +20,9 @@ def find_last_effective_element(veh_routes):
         if not element.startswith(":"):
             return element
 
-
 def mapping_route2phase(veh_routes):
     lane_id = find_last_effective_element(veh_routes)
-    if lane_id in ['74859235#1_2','74859235#1_1','652556221_2']:  # south bound start
+    if lane_id in ['74859235#1_2','74859235#1_1','652556221_2']:
         return 0
     elif lane_id in ['74859235#1_0','744913575_1']:
         return 1
@@ -75,7 +70,6 @@ def mapping_route2phase(veh_routes):
         else:
             return 9
 
-
 def phase2ETA(veh_id, intersection_center):
     veh_speed = traci.vehicle.getSpeed(veh_id)
     x2, y2 = intersection_center
@@ -84,7 +78,6 @@ def phase2ETA(veh_id, intersection_center):
     else:
         x1, y1 = traci.vehicle.getPosition(veh_id)
         return round(math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)/veh_speed)
-
 
 def return_ETA_cell(veh_id, intersection_center, plan_horizon, routes):
     phase_id = -1  # False bug ?idk
@@ -96,22 +89,15 @@ def return_ETA_cell(veh_id, intersection_center, plan_horizon, routes):
         if phase_id != None:
             return [ETA, phase_id]
 
-# DP-related functions!!!!!!!!!!!!!!!!!
-
-
-def return_signal(phase):  # input '16','15'...
+def return_signal(phase):
     if phase == "012":
-        return [6,7,8]  # phase_id in SUMO
+        return [6,7,8]
     elif phase == '34':
         return [3, 4, 5]
     elif phase == '567':
         return [9,10,11]
     elif phase == '8910':
         return [0,1,2]
-
-
-# given state variable and decision variable, calculate value function
-
 
 def signal_DP_sup_2(s, x, phase, prev_stage_calculation, G_min_T, Arrival_Table, offset):
     # backup G_min_T[phase_sequence[phase_sequence.index(phase)-1]]
@@ -130,8 +116,6 @@ def signal_DP_sup_2(s, x, phase, prev_stage_calculation, G_min_T, Arrival_Table,
     return x, prev_stage_bu[-1, -1], prev_stage_bu
 
 # given state variable, choose the decision variable value that minimize the value function
-
-
 def signal_DP_sup_1(s, phase, prev_stage_calculation, G_min_T, G_max_T, Arrival_Table, s_start, offset):  # s=row_index+1
     # flag=False #replacement to prev_stage_calculation
     if s-(G_min_T[phase]+Yellow+Red) < s_start+1:
@@ -144,12 +128,8 @@ def signal_DP_sup_1(s, phase, prev_stage_calculation, G_min_T, G_max_T, Arrival_
     for i in range(G_min_T[phase], G_max_T+1):
         if s-5-i >= s_start-Yellow-Red-G_min_T[phase]:
             X.append(i)
-    # print('X: ',X)
+    
     for x_minor in X:
-        # print('x_minor: ',x_minor)
-        # print('s: ',s)
-        # print('offset: ',offset)
-        # print('prev_stage_calculation: ',len(prev_stage_calculation))
         x, value, stage = signal_DP_sup_2(s, x_minor, phase, prev_stage_calculation, G_min_T, Arrival_Table, offset)
         if value < upload[1]:  # zth20240123:delete equal
             upload = [x, value, stage, flag]
@@ -200,8 +180,6 @@ def return_phase_char(index):
         return '567'
 
 # given arrival table and other predefined parameters, obtain the lowest value function and the best decision at every stage and every timestamp
-
-
 def signal_DP(Arrival_Table, G_min_T, G_max_T, phase_sequence, plan_horizon, approaches, departure_rate):
     # not deciding skip or not
     # stage1 calculation
@@ -217,7 +195,7 @@ def signal_DP(Arrival_Table, G_min_T, G_max_T, phase_sequence, plan_horizon, app
         else:
             flag = False
         phase_loc_1, phase_loc_2, phase_loc_3 = return_phase_loc_spec(phase)
-        prev_stage_calculation = []  # 20240123 record previous traffic flow
+        prev_stage_calculation = []
         # first +1 because we need one more +1, the second +1 because we need to obtain the value
         for i in range(G_min_T[phase]+Yellow+Red+1, G_max_T+Yellow+Red+1+1): #first stage (phase), stage variable to Gmax
             s1c_temp = np.zeros((i, approaches+2))
@@ -283,8 +261,6 @@ def signal_DP(Arrival_Table, G_min_T, G_max_T, phase_sequence, plan_horizon, app
             (historical_decision_table, decision_table), axis=1)
         historical_value_table = np.concatenate(
             (historical_value_table, value_table), axis=1)
-
-        # finish one stage
 
         if s == 120:
             flag = False
@@ -383,18 +359,18 @@ if __name__=='__main__':
     Yellow = 4
     Red = 1
     # Mapping phase from lanes
-    depart_lane_list = ['173166881_0', '173166881_1', '173166881_2', # South Bound
-                        'E0_0', 'E0_1', # North Bound
-                        '174262747_0', '174262747_1', '174262747_2', # East Bound
+    depart_lane_list = ['173166881_0', '173166881_1', '173166881_2',
+                        'E0_0', 'E0_1',
+                        '174262747_0', '174262747_1', '174262747_2',
                         '173896171_0', '173896171_1', '173896171_2', 
-                        '655620659_0', '655620659_1', '655620659_2', '655620659_3'] # West Bound
+                        '655620659_0', '655620659_1', '655620659_2', '655620659_3']
     intersection_center = [238.96, 255.79]
     plan_horizon = 120
     approaches = 11
     departure_rate = 0.5
-    phase_sequence = ['8910', '34', '012', '567']  # 20240123
+    phase_sequence = ['8910', '34', '012', '567']
 
-    sumoCmd = ["sumo-gui", "-c", "./adaptive_tsc/osm.sumocfg"]
+    sumoCmd = ["sumo-gui", "-c", "./osm.sumocfg"]
     traci.start(sumoCmd)
     routes = {}
     flag = False
@@ -405,18 +381,11 @@ if __name__=='__main__':
     for step in range(36000):  # stepwidth=0.1
         print(step)
         traci.simulationStep()  # Advance the simulation
-        
-        # -------------------  ▼▼  NEW CAV LOGIC ▼▼  ------------------------
-        # 1) all vehicles currently in the simulation
+
         all_ids = traci.vehicle.getIDList()
-
-        # 2) update the global cav_flag dict for *new* vehicles
         update_CAV_flags(all_ids)
-
-        # 3) keep only vehicles seen by at least one CAV
         veh_id_list = get_observed_vehicle_ids(all_ids)
-        
-        # 4) Coloring
+    
         observed_set = set(veh_id_list)
         for vid in all_ids:
             if cav_flag[vid]:
