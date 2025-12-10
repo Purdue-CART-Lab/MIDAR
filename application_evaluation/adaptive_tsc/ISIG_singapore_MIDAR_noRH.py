@@ -482,7 +482,7 @@ if __name__=='__main__':
     # -----------------------  CAV PARAMETERS  --------------------------------
     PENETRATION_RATE  = 0.03
     PERCEPTION_RANGE  = 54.0
-    RANDOM_SEED       = 101
+    RANDOM_SEED       = 11
     random.seed(RANDOM_SEED)
 
     cav_flag: dict[str, bool] = {}
@@ -505,7 +505,7 @@ if __name__=='__main__':
     departure_rate = 0.5
     phase_sequence = ['8910', '34', '012', '567']
 
-    sumoCmd = ["sumo-gui", "-c", "./osm.sumocfg"]
+    sumoCmd = ["sumo-gui", "-c", "./osm.sumocfg"] #"sumo"
     traci.start(sumoCmd)
 
     routes = {}
@@ -537,7 +537,7 @@ if __name__=='__main__':
                 traci.vehicle.setColor(vid, (255, 255, 255, 255))  # light gray
 
         # ------------ route history for ISIG -------------
-        if step == 100000:
+        if step == 1000:
             flag = True
         if step % 10 == 0:
             for veh_id in veh_id_list:

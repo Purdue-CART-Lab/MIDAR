@@ -353,11 +353,9 @@ def get_observed_vehicle_ids(veh_ids: list[str]) -> list[str]:
         # Random Drop
         for vid in neigh:
             d = math.hypot(positions[vid][0] - cx,
-                           positions[vid][1] - cy)
-            if random.random() < prob_visible(d):
+                        positions[vid][1] - cy)
+            if rng_drop.random() < prob_visible(d):
                 visible_neigh.append(vid)
-        
-        
         
         observed.update(visible_neigh)
         observed.add(cav)
@@ -373,8 +371,12 @@ if __name__=='__main__':
     # -----------------------  CAV-RELATED PARAMETERS  --------------------------
     PENETRATION_RATE  = 0.03    # 30 % of all vehicles become CAVs
     PERCEPTION_RANGE  = 54.0   # [m] radial sensing range of a CAV
-    RANDOM_SEED       = 111     # reproducible sampling
+    RANDOM_SEED       = 11     # reproducible sampling
     random.seed(RANDOM_SEED)
+
+    # Separate RNG just for visibility random drops
+    DROP_SEED = RANDOM_SEED + 1000
+    rng_drop = random.Random(DROP_SEED)
     
     # -----------------------  CAV-RELATED PARAMETERS  --------------------------
     BIN_SIZE         = 10.0
