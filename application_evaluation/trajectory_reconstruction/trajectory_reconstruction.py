@@ -1205,8 +1205,28 @@ def main():
     print('mae_k: ',overall_mae_l)
     print('mae_lc: ',sum(lc_time_diff)/count)
 
+    results = {
+        "overall_mae": overall_mae,
+        "mae_list": mae_list,
+        "overall_mape": overall_mape,
+        "mape_list": mape_list,
+        "overall_rmse": overall_rmse,
+        "rmse_list": rmse_list,
+        "overall_mae_l": overall_mae_l,
+        "mae_l_list": mae_l_list,
+        "lc_time_diff": lc_time_diff,
+        "count": count,
+        "lc_time_diff_dtct": lc_time_diff_dtct,
+        "count_dtct": count_dtct,
+        "count_err": count_err
+    }
+
+    with open('./results/'+path+"_evaluation_results.pkl", "wb") as f:
+        pickle.dump(results, f)
+
 if __name__ == "__main__":
     main()
 
-# python trajectory_reconstruction.py --pkl-path ./CP_traj_data/carla_MIDAR.pkl --occthr 0.27
-# python trajectory_reconstruction.py --pkl-path ./CP_traj_data/carla_MIDAR_025.pkl --occthr 0.25
+# python trajectory_reconstruction.py --pkl-path ./CP_traj_data/carla_MIDAR.pkl --occthr 0.23
+# python trajectory_reconstruction.py --pkl-path ./CP_traj_data/carla_MIDAR_noRH_023.pkl --occthr 0.23
+# python trajectory_reconstruction.py --pkl-path ./CP_traj_data/carla_Drop.pkl

@@ -505,7 +505,7 @@ if __name__=='__main__':
     departure_rate = 0.5
     phase_sequence = ['8910', '34', '012', '567']
 
-    sumoCmd = ["sumo-gui", "-c", "./osm.sumocfg"] #"sumo"
+    sumoCmd = ["sumo", "-c", "./osm.sumocfg"] #"sumo"
     traci.start(sumoCmd)
 
     routes = {}
