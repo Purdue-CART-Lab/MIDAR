@@ -45,20 +45,16 @@ sys.path.append('../../los_graphormer/models')
 from los_graphormer import LoSGraphormer
 
 
-def find_pid_by_name_substr(substr: str):
-    """
-    Find the first PID whose process name OR full cmdline contains substr.
-    Returns None if not found.
-    """
-    for p in psutil.process_iter(["pid", "name", "cmdline"]):
+def find_pid_by_exact_process_name(name: str):
+    target = name.lower()
+    for p in psutil.process_iter(attrs=["pid", "name"]):
         try:
-            name = p.info.get("name") or ""
-            cmdline = " ".join(p.info.get("cmdline") or [])
-            if (substr in name) or (substr in cmdline):
-                return int(p.info["pid"])
-        except Exception:
-            pass
+            if (p.info["name"] or "").lower() == target:
+                return p.info["pid"]
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
     return None
+
 
 # =============================================================================
 # Deterministic CAV selection
@@ -471,7 +467,7 @@ class TickResourceMonitor:
         self.f = open(self.csv_path, "w", newline="")
         self.w = csv.writer(self.f)
         self.w.writerow([
-            "wall_time_s", "step",
+            "wall_time_s", "step", "n_cav",
             "proc", "pid", "cpu_percent", "rss_mb",
             "gpu_global_util_percent", "gpu_global_vram_used_mb", "gpu_global_vram_total_mb",
             "gpu_proc_vram_mb"
@@ -519,7 +515,7 @@ class TickResourceMonitor:
             pass
         return out
 
-    def log_tick(self, step: int, wall_time_s: float):
+    def log_tick(self, *, step: int, wall_time_s: float, n_cav: int = 0):
         gpu_util, gpu_used_mb, gpu_total_mb = self._gpu_global()
         vram_by_pid = self._gpu_vram_by_pid()
 
@@ -534,7 +530,7 @@ class TickResourceMonitor:
             gpu_proc_vram_mb = vram_by_pid.get(pid, None)
 
             self.w.writerow([
-                wall_time_s, step,
+                wall_time_s, step, n_cav,
                 name, pid, cpu, rss_mb,
                 gpu_util, gpu_used_mb, gpu_total_mb,
                 gpu_proc_vram_mb
@@ -625,7 +621,7 @@ def main():
                 label = label.strip()
                 pattern = pattern.strip()
         
-                pid = find_pid_by_name_substr(pattern)
+                pid = find_pid_by_exact_process_name(pattern)
                 if pid is not None:
                     pids[label] = pid
                 else:
@@ -643,10 +639,6 @@ def main():
         for step in range(args.steps):
             t0 = time.perf_counter()
             traci.simulationStep()
-            
-            if monitor is not None:
-                wall_time_s = time.time()
-                monitor.log_tick(step=step, wall_time_s=wall_time_s)
 
             veh_ids = traci.vehicle.getIDList()
             observed_ids, per_cav_times, cavs_now = get_observed_vehicle_ids(
@@ -656,6 +648,13 @@ def main():
                 perception_range=args.perception_range,
                 occluded_thresh=args.occ_thresh,
             )
+
+            if monitor is not None:
+                monitor.log_tick(
+                    step=step,
+                    wall_time_s=time.time(),
+                    n_cav=len(cavs_now)
+                )
 
             tick_s = time.perf_counter() - t0
             all_tick_times.append(tick_s)
