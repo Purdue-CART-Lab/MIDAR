@@ -344,7 +344,7 @@ if __name__=='__main__':
     # -----------------------  CAV-RELATED PARAMETERS  --------------------------
     PENETRATION_RATE  = 0.03    # 30 % of all vehicles become CAVs
     PERCEPTION_RANGE  = 54.0   # [m] radial sensing range of a CAV
-    RANDOM_SEED       = 11      # reproducible sampling
+    RANDOM_SEED       = 101      # reproducible sampling
     random.seed(RANDOM_SEED)
     
     # --------------------------  CAV  DATA STRUCTURES  -------------------------

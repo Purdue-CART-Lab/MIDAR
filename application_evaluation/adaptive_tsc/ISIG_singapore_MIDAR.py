@@ -624,7 +624,7 @@ if __name__=='__main__':
     # -----------------------  CAV PARAMETERS  --------------------------------
     PENETRATION_RATE  = 0.03
     PERCEPTION_RANGE  = 54.0
-    RANDOM_SEED       = 11
+    RANDOM_SEED       = 101
     random.seed(RANDOM_SEED)
 
     cav_flag: dict[str, bool] = {}
@@ -647,7 +647,7 @@ if __name__=='__main__':
     departure_rate = 0.5
     phase_sequence = ['8910', '34', '012', '567']
 
-    sumoCmd = ["sumo", "-c", "./osm.sumocfg"]
+    sumoCmd = ["sumo-gui", "-c", "./osm.sumocfg"]
     traci.start(sumoCmd)
 
     routes = {}

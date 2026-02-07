@@ -371,7 +371,7 @@ if __name__=='__main__':
     # -----------------------  CAV-RELATED PARAMETERS  --------------------------
     PENETRATION_RATE  = 0.03    # 30 % of all vehicles become CAVs
     PERCEPTION_RANGE  = 54.0   # [m] radial sensing range of a CAV
-    RANDOM_SEED       = 11    # reproducible sampling
+    RANDOM_SEED       = 101    # reproducible sampling
     random.seed(RANDOM_SEED)
 
     # Separate RNG just for visibility random drops
@@ -435,15 +435,15 @@ if __name__=='__main__':
             if cav_flag[vid]:
                 # CAVs → red
                 traci.vehicle.setColor(vid, (255, 0, 0, 255))
-            #elif vid in observed_set:
-            #    # observed non‐CAVs → blue
-            #    traci.vehicle.setColor(vid, (0, 0, 255, 255))
+            elif vid in observed_set:
+                # observed non‐CAVs → blue
+                traci.vehicle.setColor(vid, (0, 0, 255, 255))
             else:
                 # unobserved → light gray
                 traci.vehicle.setColor(vid, (255, 255, 255, 255))
         
         # Warm up
-        if step == 100000:
+        if step == 1000:
             flag = True
             # Warm up end
         if step % 10 == 0:

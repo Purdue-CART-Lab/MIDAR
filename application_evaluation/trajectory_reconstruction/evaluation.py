@@ -369,14 +369,15 @@ def main():
         "True LiDAR": y_true,
         "Perfect": y_perf,
         "Random Dropout": y_drop,
-        "MIDAR": y_midar,
-        "MIDAR-noRH": y_norh,
+        "MIDAR w/ ray-hit": y_midar,
+        "MIDAR w/o ray-hit": y_norh,
     }
+
 
     plot_case_bars_3rows(
         case_idx,
         bar_data,
-        ylabel=args.metric.replace("_list", "").upper(),
+        ylabel="MAE (m)", #args.metric.replace("_list", "").upper(),
         outbase=os.path.join(args.outdir, f"bars_3rows_cases{L}_{args.metric}"),
         title=args.title
     )

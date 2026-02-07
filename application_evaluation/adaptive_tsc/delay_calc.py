@@ -1,8 +1,9 @@
 import xml.etree.ElementTree as ET
 
 # 1) load your tripinfo output
-tree = ET.parse('./sumo/MIDAR_noRH_seed666.xml')
+#tree = ET.parse('./sumo/MIDAR_noRH_seed666.xml')
 #tree = ET.parse('./sumo/MIDAR_seed666.xml')
+tree = ET.parse('./sumo/RandomDrop_seed666.xml')
 root = tree.getroot()
 
 delays = []
