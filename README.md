@@ -36,7 +36,7 @@ MIDAR/
 - PyTorch Geometric
 - NumPy, Pandas, scikit-learn
 
-**Additional (for application evaluations):**
+**For application evaluations:**
 - Shapely, SciPy, Matplotlib, statsmodels
 - Pyomo (trajectory reconstruction optimization)
 - psutil, pynvml (computational cost benchmarking)
