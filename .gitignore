@@ -10,3 +10,15 @@ __pycache__/
 trained_model/
 data/
 logs/
+
+results/
+
+CP_traj_data/
+
+evaluation_results/
+
+sumo/
+
+*.sh
+
+*.csv
