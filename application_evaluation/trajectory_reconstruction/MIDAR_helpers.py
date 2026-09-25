@@ -7,6 +7,7 @@ Created on Mon Nov 10 04:35:59 2025
 """
 
 import math
+from typing import Optional
 import numpy as np
 
 import torch
@@ -200,6 +201,8 @@ def _build_los_frame_for_cav(
     headings: dict[int, float],
     corridor_width: float = 1.0,
     use_ray_hit: bool = True,
+    z: Optional[dict] = None,
+    lidar_height: float = 1.75,
 ) -> Data:
     """
     Build a single-frame torch_geometric.Data object for the CAV and its neighbours.
@@ -208,9 +211,13 @@ def _build_los_frame_for_cav(
       x:   (N+1, 5) = [dist, bin_score, w, l, h], ego at index 0
       pos: (N+1, 2) = [ego_xy; centers]
       yaw: (N+1,)   = [0; ego-relative yaws]
-      z:   (N+1,)   = [0; zeros]  (no true z yet)
+      z:   (N+1,)   = [0; box-centre heights relative to the ego LiDAR]
       y:   dummy labels (zeros)
       chains, seq_targets, edge_index: same structure as dataset.
+
+    z: optional {id: box-centre height (m) relative to the ego's LiDAR sensor}
+       for the neighbours, as in the training data. If None, it is estimated
+       for a flat road as h/2 - lidar_height.
     """
 
     def _to_rad_arr(a):
@@ -286,7 +293,10 @@ def _build_los_frame_for_cav(
 
     N = centers.shape[0]
     ego_xy = np.array([0.0, 0.0], dtype=np.float32)
-    zs = np.zeros(N, dtype=np.float32)
+    if z is None:
+        zs = (0.5 * hs - lidar_height).astype(np.float32)
+    else:
+        zs = np.array([z[i] for i in ids], dtype=np.float32)
     # -------------------------------------------------
     # Node features
     #   use_ray_hit=True  -> [dist, bin_score, w, l, h]  (F=5)

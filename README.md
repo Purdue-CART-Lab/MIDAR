@@ -123,7 +123,7 @@ python train_nuscenes.py \
 | `--lr`            | 2e-4    | Learning rate                            |
 | `--patience`      | 10      | Early stopping patience                  |
 | `--max-epochs`    | 200     | Maximum training epochs                  |
-| `--seed`          | 18      | Random seed (also sets the train/val/test scene split) |
+| `--seed`          | 42 (CARLA), 18 (nuScenes) | Random seed (also sets the train/val/test scene split) |
 
 ## Pre-trained Models
 
@@ -158,27 +158,104 @@ Every `<detector>/<dataset>/` folder contains the same five checkpoints:
 | MLP                    | 0.8629 | 0.8285   |
 | GCN                    | 0.8352 | 0.7967   |
 
+## Using MIDAR in Your Own Application
+
+MIDAR can replace a LiDAR detector in any simulator or dataset that provides vehicle positions, headings and sizes. At each time step, for each sensing vehicle (ego), MIDAR takes the surrounding vehicles within sensing range and returns the subset the LiDAR detector would detect. Vehicles it does not return are false negatives (missed detections).
+
+### Inputs
+
+For every vehicle, in one global coordinate frame:
+
+| Input      | Format                    | Notes                                                        |
+|------------|---------------------------|--------------------------------------------------------------|
+| `positions`| `{id: (x, y)}` in m       | Ego and all neighbours                                       |
+| `headings` | `{id: yaw}` in rad        | Ego and all neighbours. Direction of travel, counter-clockwise from +x (for SUMO: `math.radians(90 - traci.vehicle.getAngle(v))`). Values with \|yaw\| > 3.2 are treated as degrees |
+| `dims`     | `{id: (w, l, h)}` in m    | Neighbours                                                   |
+| `z` (optional) | `{id: z}` in m        | Neighbours' box-centre height relative to the ego's LiDAR sensor. If omitted, estimated for a flat road as `h/2 - lidar_height` (`lidar_height=1.75` by default) |
+
+The helper translates and rotates the scene into the ego frame and computes the ray-hit feature for you. Pass `z=` (and `lidar_height=`) as keyword arguments to `_build_los_frame_for_cav` when your simulator provides vehicle heights.
+
+### Example
+
+The frame-building and inference helpers live in `application_evaluation/trajectory_reconstruction/MIDAR_helpers.py`. Run from the repository root:
+
+```python
+import sys, math, torch
+sys.path.append("application_evaluation/trajectory_reconstruction")
+from los_graphormer import LoSGraphormer
+from MIDAR_helpers import _build_los_frame_for_cav, los_visible_ids_from_graph
+
+# 1. Load a checkpoint (in_feats=5 for *_5F.pth, 4 for *_4F.pth)
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+model = LoSGraphormer(in_feats=5, d_model=128, nhead=4, num_layers=3,
+                      dim_feedforward=256, dropout=0.2, max_len=32,
+                      num_classes=2).to(device)
+model.load_state_dict(torch.load(
+    "trained_model/centerpoint/carla/los_graphormer_5F.pth", map_location=device))
+model.eval()
+
+SENSING_RANGE = 80.0   # m
+OCC_THRESH = 0.272     # vehicle is detected if P(missed) < OCC_THRESH
+
+# 2. At each time step, for each ego vehicle:
+def midar_detect(ego_id, positions, headings, dims):
+    ex, ey = positions[ego_id]
+    neigh = [v for v in positions
+             if v != ego_id and math.hypot(positions[v][0] - ex, positions[v][1] - ey) <= SENSING_RANGE]
+    if not neigh:
+        return []
+    # The helper expects integer IDs: map the ego to 0 and neighbours to 1..N
+    ids = [ego_id] + neigh
+    data = _build_los_frame_for_cav(
+        0, list(range(1, len(ids))),
+        {i: positions[v] for i, v in enumerate(ids)},
+        {i: dims[v] for i, v in enumerate(ids) if i > 0},
+        {i: headings[v] for i, v in enumerate(ids)},
+        use_ray_hit=True,   # False for *_4F.pth
+    ).to(device)
+    visible = los_visible_ids_from_graph(data, model, occ_thresh=OCC_THRESH)
+    return [ids[i] for i in visible if i != 0]
+```
+
+For CP-based applications, run `midar_detect` for every CAV and take the union of the results as the cooperative observation.
+
+### Choosing a Checkpoint and Threshold
+
+Match the checkpoint to the detector you want to mimic and the environment closest to yours. Keep the sensing range at the detection range of the training data. For example:
+
+| Checkpoint                                | Sensing range | `OCC_THRESH` |
+|-------------------------------------------|---------------|--------------|
+| `centerpoint/carla/los_graphormer_5F`     | 80 m          | 0.272        |
+| `bevfusion/nuscenes/los_graphormer_5F`    | 54 m          | 0.217        |
+
+`OCC_THRESH` trades detections for misses: lowering it makes MIDAR miss more vehicles. If you use a different environment, re-tune the threshold on labelled data from that environment.
+
 ## Application Evaluations
 
-Two ITS applications demonstrate MIDAR's practical value:
+The paper's application evaluations also serve as complete integration examples:
 
-- **Adaptive Traffic Signal Control** (`application_evaluation/adaptive_tsc/`) — CP-based signal control integrated with SUMO, comparing MIDAR against perfect detection and random-drop baselines.
+- **Adaptive Traffic Signal Control** (`application_evaluation/adaptive_tsc/`) — CP-based signal control in SUMO, comparing MIDAR against perfect detection and random-drop baselines. `ISIG_singapore_MIDAR.py` queries MIDAR online through TraCI.
 
-- **Vehicle Trajectory Reconstruction** (`application_evaluation/trajectory_reconstruction/`) — Reconstructing complete vehicle trajectories from partial cooperative perception data generated by MIDAR.
+- **Vehicle Trajectory Reconstruction** (`application_evaluation/trajectory_reconstruction/`) — Reconstructing complete vehicle trajectories from partial cooperative perception data generated by MIDAR. `CP_data_generation.py` runs MIDAR offline on a trajectory CSV with columns `Vehicle_ID, Global_Time, Global_X, Global_Y, v_Width, v_Length, v_Height, yaw, CAV`.
 
-- **Computational Cost** (`application_evaluation/computational_cost/`) — Runtime benchmarking showing MIDAR introduces minimal overhead for real-time SUMO integration.
+- **Computational Cost** (`application_evaluation/computational_cost/`) — Runtime benchmarking showing MIDAR introduces minimal overhead for real-time SUMO integration (`online_detection_MIDAR.py`).
 
-<!-- ## Citation
+## Citation
 
 If you use MIDAR in your research, please cite:
 
 ```bibtex
-@article{zhu2025midar,
-  title={Empowering Microscopic Traffic Simulators with Realistic Perception using Surrogate Sensor Models},
-  author={Zhu, Tianheng and Feng, Yiheng},
-  year={2025}
+@article{zhu2027empowering,
+  title   = {Empowering microscopic traffic simulators with realistic perception using surrogate sensor models},
+  journal = {Transportation Research Part C: Emerging Technologies},
+  volume  = {194},
+  pages   = {106031},
+  year    = {2027},
+  issn    = {0968-090X},
+  doi     = {https://doi.org/10.1016/j.trc.2026.106031},
+  author  = {Tianheng Zhu and Yiheng Feng}
 }
-``` -->
+```
 
 ## License
 
