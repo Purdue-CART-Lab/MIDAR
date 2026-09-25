@@ -602,7 +602,7 @@ if __name__=='__main__':
         sys.path.append(os.path.join(os.environ['SUMO_HOME'], 'tools'))
 
     # -----------------------  LoS-Graphormer PARAMETERS  --------------------------
-    MODEL_PATH = '../../trained_model/nuscenes_los_graphormer_8647.pth'
+    MODEL_PATH = '../../trained_model/centerpoint/nuscenes/los_graphormer_5F.pth'
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     _gnn = LoSGraphormer(
         in_feats=5,

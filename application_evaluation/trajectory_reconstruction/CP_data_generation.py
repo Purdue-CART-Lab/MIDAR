@@ -488,7 +488,7 @@ def main():
     parser.add_argument(
         "--ckpt-path",
         type=str,
-        default="../../trained_model/carla_los_graphormer_9385.pth",
+        default="../../trained_model/centerpoint/carla/los_graphormer_5F.pth",
         help="Path to trained LoS-Graphormer checkpoint."
     )
 
@@ -506,8 +506,8 @@ def main():
    
 if __name__ == "__main__":
     main()
-#python CP_data_generation.py --detection-mode MIDAR --ckpt-path ../../trained_model/carla_los_graphormer_4F_8982.pth --use-ray-hit --occ-thresh 0.27
-#python CP_data_generation.py --detection-mode MIDAR --ckpt-path ../../trained_model/carla_los_graphormer_4F_8982.pth --occ-thresh 0.23
+#python CP_data_generation.py --detection-mode MIDAR --ckpt-path ../../trained_model/centerpoint/carla/los_graphormer_4F.pth --use-ray-hit --occ-thresh 0.27
+#python CP_data_generation.py --detection-mode MIDAR --ckpt-path ../../trained_model/centerpoint/carla/los_graphormer_4F.pth --occ-thresh 0.23
 #python CP_data_generation.py --detection-mode 'true'
 #python CP_data_generation.py --detection-mode 'random_drop'
 #python CP_data_generation.py --detection-mode 'perfect'

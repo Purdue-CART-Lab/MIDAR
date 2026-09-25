@@ -8,6 +8,7 @@ __pycache__/
 .vscode/
 
 trained_model/
+runs/
 data/
 logs/
 

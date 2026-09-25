@@ -20,7 +20,12 @@ MIDAR/
 ├── data/
 │   ├── dataset_MIDAR_carla.csv  # CARLA dataset
 │   └── dataset_MIDAR_nuscenes.csv  # nuScenes dataset
-├── trained_model/               # Pre-trained checkpoints
+├── trained_model/               # <detector>/<dataset>/<model>.pth
+│   ├── centerpoint/             # Trained on CenterPoint labels (paper models)
+│   │   ├── carla/
+│   │   └── nuscenes/
+│   └── bevfusion/               # Trained on BEVFusion labels
+│       └── nuscenes/
 ├── application_evaluation/
 │   ├── adaptive_tsc/            # CP-based adaptive signal control
 │   ├── trajectory_reconstruction/  # Vehicle trajectory reconstruction
@@ -73,7 +78,7 @@ python train_carla.py \
   --csv-path data/dataset_MIDAR_carla.csv \
   --use-ray-hit \
   --model-type los_graphormer \
-  --ckpt-path trained_model/carla_los_graphormer.pth
+  --ckpt-path runs/centerpoint/carla/los_graphormer_5F.pth
 ```
 
 Train on nuScenes data:
@@ -83,8 +88,19 @@ python train_nuscenes.py \
   --csv-path data/dataset_MIDAR_nuscenes.csv \
   --use-ray-hit \
   --model-type los_graphormer \
-  --ckpt-path trained_model/nuscenes_los_graphormer.pth
+  --ckpt-path runs/centerpoint/nuscenes/los_graphormer_5F.pth
 ```
+
+> **Note:** Point `--ckpt-path` outside `trained_model/` (e.g. `runs/`) when training. The pre-trained checkpoints use the same file names, so training into `trained_model/` overwrites them. The output directory is created automatically.
+
+### Input Features
+
+| Variant | Flag            | Per-vehicle features         |
+|---------|-----------------|------------------------------|
+| **5F**  | `--use-ray-hit` | `[dist, ray_hit, w, l, h]`   |
+| **4F**  | *(omit)*        | `[dist, w, l, h]`            |
+
+5F is the full MIDAR model; 4F is the ablation without the ray-hit feature.
 
 ### Model Options
 
@@ -107,23 +123,40 @@ python train_nuscenes.py \
 | `--lr`            | 2e-4    | Learning rate                            |
 | `--patience`      | 10      | Early stopping patience                  |
 | `--max-epochs`    | 200     | Maximum training epochs                  |
+| `--seed`          | 18      | Random seed (also sets the train/val/test scene split) |
 
 ## Pre-trained Models
 
-Pre-trained checkpoints are in `trained_model/`. The filename suffix encodes the AUC score:
+Checkpoints are organized as `trained_model/<detector>/<dataset>/<model>.pth`, where `<detector>` is the LiDAR detector whose outputs MIDAR was trained to mimic:
 
-| Model                          | Dataset  | AUC    |
-|--------------------------------|----------|--------|
-| LoS-Graphormer (5F, ray-hit)  | CARLA    | 0.9385 |
-| LoS-Graphormer (4F, no ray-hit)| CARLA   | 0.8982 |
-| Vanilla Transformer           | CARLA    | 0.9135 |
-| MLP                           | CARLA    | 0.8629 |
-| GCN                           | CARLA    | 0.8352 |
-| LoS-Graphormer (5F, ray-hit)  | nuScenes | 0.8647 |
-| LoS-Graphormer (4F, no ray-hit)| nuScenes| 0.8665 |
-| Vanilla Transformer           | nuScenes | 0.8378 |
-| MLP                           | nuScenes | 0.8285 |
-| GCN                           | nuScenes | 0.7967 |
+```
+trained_model/
+├── centerpoint/                 # Paper models
+│   ├── carla/
+│   └── nuscenes/
+└── bevfusion/
+    └── nuscenes/
+```
+
+Every `<detector>/<dataset>/` folder contains the same five checkpoints:
+
+| File                      | Model                            | `--model-type`   | Train with        |
+|---------------------------|----------------------------------|------------------|-------------------|
+| `los_graphormer_5F.pth`   | LoS-Graphormer (MIDAR), ray-hit  | `los_graphormer` | `--use-ray-hit`   |
+| `los_graphormer_4F.pth`   | LoS-Graphormer, no ray-hit       | `los_graphormer` |                   |
+| `vanilla_transformer.pth` | Vanilla Transformer baseline     | `vanilla`        | `--use-ray-hit`   |
+| `mlp.pth`                 | MLP baseline                     | `mlp`            | `--use-ray-hit`   |
+| `gcn.pth`                 | GCN baseline                     | `gcn`            | `--use-ray-hit`   |
+
+### Test-set AUC (CenterPoint)
+
+| Model                  | CARLA  | nuScenes |
+|------------------------|--------|----------|
+| LoS-Graphormer (5F)    | 0.9385 | 0.8647   |
+| LoS-Graphormer (4F)    | 0.8982 | 0.8665   |
+| Vanilla Transformer    | 0.9135 | 0.8378   |
+| MLP                    | 0.8629 | 0.8285   |
+| GCN                    | 0.8352 | 0.7967   |
 
 ## Application Evaluations
 

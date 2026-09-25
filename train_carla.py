@@ -71,7 +71,7 @@ def main():
     parser.add_argument("--val-size", type=float, default=0.1765, #0.85*0.1765=0.15
                         help="Fraction of trainval scenes for validation.")
     parser.add_argument("--ckpt-path", type=str,
-                        default="./trained_model/carla_losgraphormer.pth")
+                        default="./trained_model/centerpoint/carla/losgraphormer.pth")
 
     args = parser.parse_args()
 

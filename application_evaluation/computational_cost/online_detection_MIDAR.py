@@ -560,7 +560,7 @@ def main():
     parser.add_argument("--step-length", type=float, default=0.05, help="SUMO step-length if you want to set it.")
     parser.add_argument("--perception-range", type=float, default=80.0, help="Perception range (m).")
     parser.add_argument("--occ-thresh", type=float, default=0.22167, help="Observed if p(occ) < threshold.")
-    parser.add_argument("--model-path", type=str, default="../../trained_model/carla_los_graphormer_9385.pth",
+    parser.add_argument("--model-path", type=str, default="../../trained_model/centerpoint/carla/los_graphormer_5F.pth",
                         help="LoSGraphormer checkpoint path.")
     parser.add_argument("--util-log", type=str, default=None,
                     help="If set, write per-tick CPU/GPU utilization CSV to this path.")
